@@ -1,3 +1,10 @@
+//
+// Code to control a RATTMMOTOR 500W CNC spindle
+// The Rp2040 uses PWM to drive an opto-isolator, which turns the 10 V from the controller into 
+// an adjustable 0-10V speed control voltage.
+// An IR sensor module (KEAcvise IR obstacle sensor) detects the spindle rotation off a piece of white tape on the spindle surface.
+// The RP2040 provides a slave-mode I2C interface to e.g. a Raspberry Pi 4 running Linux
+//
 pin_size_t vOutPin = D0; // D0 = PWM5A = GPI26, for PWM pulse output
 pin_size_t ENCODER_SPEED_PIN = D7; // for edge detect input
 uint8_t vOutSlice;
@@ -38,14 +45,37 @@ unsigned long last_encoder_interrupt = micros();
 unsigned long encoder_now = micros();
 volatile unsigned long elapsed_micros = 0;
 
+#define DEBOUNCE_US 500
+volatile bool edgeCheckPending = false;
+
+int64_t confirmEdgeLow(alarm_id_t id, void *user_data) {
+  edgeCheckPending = false;
+
+  // Confirm that the signal is still low after debounce interval
+  if (digitalRead(ENCODER_SPEED_PIN) == LOW) {
+    if (encoder_now > last_encoder_interrupt && last_encoder_interrupt != 0) {
+      elapsed_micros = encoder_now - last_encoder_interrupt;
+    }
+    last_encoder_interrupt = encoder_now;
+  }
+
+  return 0;   // one-shot alarm
+}
+
+
 // isr for falling edge on D7 from encoder detector
+// this sets an alarm for a little later to see if this is a "real" pulse
+// shoud reject most spurious edge triggers
 void encoderIsr() {
-        encoder_now = micros();
-        if (encoder_now > last_encoder_interrupt) {
-          // write to I2C time register
-          elapsed_micros = encoder_now - last_encoder_interrupt;
-        }
-        last_encoder_interrupt = encoder_now;
+
+  if (edgeCheckPending) {
+    return;   // ignore additional noise while validation is pending
+  }
+
+  encoder_now = micros();
+  edgeCheckPending = true;
+  add_alarm_in_us(DEBOUNCE_US, confirmEdgeLow, NULL, false);
+
 }
 
 // interrupt-safe-ish copy of elapsed_micros
@@ -120,7 +150,7 @@ void setup() {
   gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
   gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
 
-  i2c_data[I2C_BLUE_DELAY] = 10; // 100 ms x2 init (so 5 Hz update rate)
+  i2c_data[I2C_BLUE_DELAY] = 7; //  update rate delay ms x2
   i2c_data[I2C_ERROR_REG] = I2C_ERR_OK;
 
   // Start i2c as slave and set up handlers
