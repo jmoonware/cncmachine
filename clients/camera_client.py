@@ -333,6 +333,36 @@ class IDSPeakMonoCamera:
             self._streaming = False
 
     def acquire_frame(self, timeout_ms: int = 2000) -> np.ndarray:
+        if self.datastream is None:
+            raise RuntimeError("Camera not open")
+    
+        buffer = self.datastream.WaitForFinishedBuffer(ids_peak.Timeout(timeout_ms))
+        try:
+            try:
+                if buffer.IsIncomplete():
+                    raise RuntimeError("Received incomplete image buffer")
+            except AttributeError:
+                pass
+    
+            image = ids_peak_ipl_extension.BufferToImage(buffer)
+    
+            image = image.ConvertTo(
+                ids_peak_ipl.PixelFormatName_Mono8,
+                ids_peak_ipl.ConversionMode_Fast,
+            )
+    
+            arr = image.get_numpy_2D()
+            arr = np.asarray(arr)
+    
+            if arr.ndim != 2:
+                raise RuntimeError(f"Expected 2-D image, got {arr.shape}")
+    
+            return np.ascontiguousarray(arr.copy())
+    
+        finally:
+            self.datastream.QueueBuffer(buffer)
+
+    def acquire_frame_old(self, timeout_ms: int = 2000) -> np.ndarray:
         """Acquire one frame. Caller must have started acquisition."""
         if self.datastream is None:
             raise RuntimeError("Camera not open")
