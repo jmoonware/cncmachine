@@ -58,6 +58,8 @@ from PyQt6.QtWidgets import (
 import pyqtgraph as pg
 
 from ids_peak import ids_peak
+from ids_peak import ids_peak_ipl_extension
+from ids_peak_ipl import ids_peak_ipl
 
 try:
     from ids_peak_common import PixelFormat
@@ -158,7 +160,7 @@ def get_float_node_limits(nodemap: Any, node_name: str, default: Tuple[float, fl
 
 @dataclass
 class CameraSettings:
-    exposure_us: float = 5000.0
+    exposure_us: float = 50000.0
     gain: float = 1.0
 
 
@@ -231,6 +233,16 @@ class IDSPeakMonoCamera:
                         self.pipeline.output_pixel_format = getattr(PixelFormat, attr)
                         break
 
+                try:
+                    cast(ids_peak.BooleanNode, self.nodemap.FindNode("AcquisitionFrameRateEnable")).SetValue(True)
+                except Exception:
+                    pass
+                
+                try:
+                    set_float_node(self.nodemap, "AcquisitionFrameRate", 1.0)
+                except Exception:
+                    pass
+
             self._allocate_buffers()
             self._opened = True
 
@@ -238,7 +250,7 @@ class IDSPeakMonoCamera:
         if self.nodemap is None or self.datastream is None:
             raise RuntimeError("Camera not open")
         payload_size = cast(ids_peak.IntegerNode, self.nodemap.FindNode("PayloadSize")).Value()
-        buffer_count = self.datastream.NumBuffersAnnouncedMinRequired()
+        buffer_count = max(8,self.datastream.NumBuffersAnnouncedMinRequired())
         for _ in range(buffer_count):
             buffer = self.datastream.AllocAndAnnounceBuffer(payload_size)
             self.datastream.QueueBuffer(buffer)
@@ -338,11 +350,12 @@ class IDSPeakMonoCamera:
     
         buffer = self.datastream.WaitForFinishedBuffer(ids_peak.Timeout(timeout_ms))
         try:
-            try:
-                if buffer.IsIncomplete():
-                    raise RuntimeError("Received incomplete image buffer")
-            except AttributeError:
-                pass
+#            try:
+#                if buffer.IsIncomplete():
+#                    return None
+#                    raise RuntimeError("Received incomplete image buffer")
+#            except AttributeError:
+#                pass
     
             image = ids_peak_ipl_extension.BufferToImage(buffer)
     
@@ -353,6 +366,7 @@ class IDSPeakMonoCamera:
     
             arr = image.get_numpy_2D()
             arr = np.asarray(arr)
+#            print(arr.nbytes)
     
             if arr.ndim != 2:
                 raise RuntimeError(f"Expected 2-D image, got {arr.shape}")
@@ -382,7 +396,7 @@ class IDSPeakMonoCamera:
         finally:
             self.datastream.QueueBuffer(buffer)
 
-    def acquire_single(self, exposure_us: float = 5000.0, gain: float = 1.0, timeout_ms: int = 5000) -> np.ndarray:
+    def acquire_single(self, exposure_us: float = 50000.0, gain: float = 1.0, timeout_ms: int = 5000) -> np.ndarray:
         """Set exposure/gain and acquire a single frame, preserving previous stream state."""
         with self._lock:
             was_streaming = self._streaming
@@ -594,7 +608,7 @@ class USBCameraControlWidget(QMainWindow):
         self.exposure_spin.setDecimals(0)
         self.exposure_spin.setSingleStep(1.0)
         self.exposure_spin.setRange(1, 10_000_000)
-        self.exposure_spin.setValue(5000)
+        self.exposure_spin.setValue(50000)
         self.exposure_spin.setSuffix(" µs")
         self.exposure_spin.valueChanged.connect(self.on_exposure_changed)
         form.addRow("Exposure:", self.exposure_spin)
@@ -688,7 +702,8 @@ class USBCameraControlWidget(QMainWindow):
         while not self.worker_stop.is_set():
             try:
                 frame = self.camera.acquire_frame(timeout_ms=1000)
-                self.signals.frame.emit(frame)
+                if frame is not None:
+                    self.signals.frame.emit(frame)
             except ids_peak.TimeoutException:
                 continue
             except ids_peak.AbortedException:
@@ -802,7 +817,7 @@ def clamp_float(value: float, lo: float, hi: float) -> float:
 # ----------------------- Python-callable single image API --------------------
 
 
-def acquire_single_image(exposure_us: float = 5000.0, gain: float = 1.0) -> np.ndarray:
+def acquire_single_image(exposure_us: float = 50000.0, gain: float = 1.0) -> np.ndarray:
     """
     Acquire one IDS camera image and return a 2-D NumPy integer array.
 

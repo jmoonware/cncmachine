@@ -35,3 +35,4 @@ DRIVE00000000 ; make sure all the axes are off
 DRIVE00001110 ; turn on drives 5,6,7
 HOMXXXX110X ; home 5,6,7 axes, 7 goes negative direction first
 ; make sure home is successful
+END
