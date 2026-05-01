@@ -3,7 +3,7 @@ name = "cncmachine"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.12"
 dependencies = [
     "ids-peak>=1.15.0.0.8",
     "ids-peak-common>=1.3.0.4212",
@@ -12,6 +12,13 @@ dependencies = [
     "pillow>=12.2.0",
 #    "pyqt6",
 # Note: On the Pi, need system-wide PyQt6 so use:
+# uv python pin /usr/bin/python3
 # uv venv --system-site-packages --python /usr/bin/python3
+# uv sync --python /usr/bin/python
     "pyqtgraph>=0.14.0",
+]
+[tool.uv]
+required-environments = [
+  "sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "sys_platform == 'linux' and platform_machine == 'aarch64'",
 ]
