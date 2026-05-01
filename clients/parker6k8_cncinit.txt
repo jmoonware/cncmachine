@@ -1,0 +1,37 @@
+; *****
+; Initialization parameters and code for JM CNC machine
+; *****
+DEL CNCINIT
+DEF CNCINIT
+DRIVE00000000 ; make sure all the axes are off
+;
+; X axis is Motor 6, stage is 10 mm/rev
+;
+6ERES8000 ; 8k steps/rev for encoders
+6SCLA8000 ; acceleration in revs/s2
+6SCLV8000 ; velocity in revs/s
+6SGP2 ; proportional gain
+6SGV0.0 ; velocity gain
+6HOMV2 ; homing velocity
+;
+; Y axis is Motor 5, stage is 10 mm/rev
+;
+5ERES8000 ; 8k steps/rev for encoders
+5SCLA8000 ; acceleration in revs/s2
+5SCLV8000 ; velocity in revs/s
+5SGP4 ; proportional gain, note higher value
+5SGV0.0 ; velocity gain
+5HOMV2 ; homing velocity
+;
+; Z axis is Motor 7, stage is 5mm/rev
+;
+7ERES8000 ; 8k steps/rev for encoders
+7SCLA8000 ; acceleration in revs/s2
+7SCLV8000 ; velocity in revs/s
+7SGP2 ; proportional gain
+7SGV0.0 ; velocity gain
+7HOMV2 ; homing velocity
+;
+DRIVE00001110 ; turn on drives 5,6,7
+HOMXXXX110X ; home 5,6,7 axes, 7 goes negative direction first
+; make sure home is successful
