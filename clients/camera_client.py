@@ -239,11 +239,12 @@ class IDSPeakMonoCamera:
                     pass
                 
                 try:
-                    set_float_node(self.nodemap, "AcquisitionFrameRate", 1.0)
+                    set_float_node(self.nodemap, "AcquisitionFrameRate", 20.0)
                 except Exception:
                     pass
 
             self._allocate_buffers()
+#           print("Expected payload:", self.nodemap.FindNode("PayloadSize").Value())
             self._opened = True
 
     def _allocate_buffers(self) -> None:
@@ -356,7 +357,11 @@ class IDSPeakMonoCamera:
 #                    raise RuntimeError("Received incomplete image buffer")
 #            except AttributeError:
 #                pass
-    
+
+#            print("buffer:","size", buffer.Size(),"width", buffer.Width(),"height", buffer.Height(),"pixel_format", buffer.PixelFormat(),)
+#            print("Delivered image size:", buffer.Size())
+#            print("FrameID:", buffer.FrameID())
+#            print("Timestamp:", buffer.Timestamp())
             image = ids_peak_ipl_extension.BufferToImage(buffer)
     
             image = image.ConvertTo(
@@ -705,8 +710,10 @@ class USBCameraControlWidget(QMainWindow):
                 if frame is not None:
                     self.signals.frame.emit(frame)
             except ids_peak.TimeoutException:
+                print("Timeout")
                 continue
             except ids_peak.AbortedException:
+                print("Aborted")
                 break
             except Exception as exc:
                 self.signals.error.emit(str(exc))
