@@ -46,6 +46,9 @@ unsigned long encoder_now = micros();
 volatile unsigned long elapsed_micros = 0;
 
 #define DEBOUNCE_US 500
+#define ENCODER_TIMEOUT_US 2000000UL   // 2 seconds default
+
+volatile unsigned long last_valid_edge_micros = 0;
 volatile bool edgeCheckPending = false;
 
 int64_t confirmEdgeLow(alarm_id_t id, void *user_data) {
@@ -57,6 +60,7 @@ int64_t confirmEdgeLow(alarm_id_t id, void *user_data) {
       elapsed_micros = encoder_now - last_encoder_interrupt;
     }
     last_encoder_interrupt = encoder_now;
+    last_valid_edge_micros = encoder_now;
   }
 
   return 0;   // one-shot alarm
@@ -81,11 +85,21 @@ void encoderIsr() {
 // interrupt-safe-ish copy of elapsed_micros
 void getEncoderTime() {
   
+  unsigned long elapsed_copy;
+  unsigned long now = micros();
+
   noInterrupts();
 
-  i2c_data[I2C_EDGE_TIME_LOW] = (uint8_t)(elapsed_micros&255); 
-  i2c_data[I2C_EDGE_TIME_MID] = (uint8_t)((elapsed_micros>>8)&255);
-  i2c_data[I2C_EDGE_TIME_HIGH] = (uint8_t)((elapsed_micros>>16)&255);
+  if (last_valid_edge_micros != 0 &&
+      (unsigned long)(now - last_valid_edge_micros) > ENCODER_TIMEOUT_US) {
+    elapsed_micros = 0;
+  }
+
+  elapsed_copy = elapsed_micros;
+
+  i2c_data[I2C_EDGE_TIME_LOW] = (uint8_t)(elapsed_copy&255); 
+  i2c_data[I2C_EDGE_TIME_MID] = (uint8_t)((elapsed_copy>>8)&255);
+  i2c_data[I2C_EDGE_TIME_HIGH] = (uint8_t)((elapsed_copy>>16)&255);
 
   interrupts();
 }

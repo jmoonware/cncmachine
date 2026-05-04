@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QLabel,
     QDial,
-    QSlider,
+    QDoubleSpinBox,
 )
 
 I2C_BUS = 1              # Raspberry Pi 4 default I2C bus
@@ -21,6 +21,48 @@ I2C_ADDR = 0x64          # Seeeduino slave address: decimal 100
 REG_PWM_LOW = 1
 REG_PWM_HIGH = 2
 REG_EDGE_TIME_LOW = 3    # 3-byte little-endian microseconds/revolution
+
+CAL_FILE = Path(__file__).with_name("motorcal.txt")
+MAX_SETPOINT_HZ = 164.0
+
+def load_motor_calibration(path: Path):
+    speeds = []
+    registers = []
+
+    with path.open("r") as f:
+        tokens = f.read().split()
+
+    # Skip header tokens / comments by parsing only numeric pairs
+    numeric = []
+    for token in tokens:
+        try:
+            numeric.append(float(token))
+        except ValueError:
+            pass
+
+    if len(numeric) < 4 or len(numeric) % 2 != 0:
+        raise ValueError(f"Invalid calibration file: {path}")
+
+    for i in range(0, len(numeric), 2):
+        speeds.append(numeric[i])
+        registers.append(numeric[i + 1])
+
+    # np.interp requires x-values sorted ascending.
+    pairs = sorted(zip(speeds, registers), key=lambda p: p[0])
+
+    # Remove duplicate speed entries, keeping the lowest register value.
+    # This matters because motorcal.txt has multiple 0.00 Hz entries.
+    unique_speeds = []
+    unique_registers = []
+
+    for speed, reg in pairs:
+        if unique_speeds and abs(speed - unique_speeds[-1]) < 1e-9:
+            unique_registers[-1] = min(unique_registers[-1], reg)
+        else:
+            unique_speeds.append(speed)
+            unique_registers.append(reg)
+
+    return np.array(unique_speeds), np.array(unique_registers)
 
 
 class MotorSpeedClient(QWidget):
@@ -40,26 +82,31 @@ class MotorSpeedClient(QWidget):
         self.speed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.speed_label.setStyleSheet("font-size: 32px; font-weight: bold;")
 
-        self.slider_label = QLabel("Motor command: 0%")
-        self.slider_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.speed_slider = QSlider(Qt.Orientation.Horizontal)
-        self.speed_slider.setRange(0, 100)
-        self.speed_slider.setValue(0)
-        self.speed_slider.valueChanged.connect(self.on_slider_changed)
+        self.setpoint_label = QLabel("Spindle speed setpoint")
+        self.setpoint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        self.speed_setpoint = QDoubleSpinBox()
+        self.speed_setpoint.setRange(0.0, MAX_SETPOINT_HZ)
+        self.speed_setpoint.setDecimals(2)
+        self.speed_setpoint.setSingleStep(1.0)
+        self.speed_setpoint.setSuffix(" Hz")
+        self.speed_setpoint.setValue(0.0)
+        self.speed_setpoint.valueChanged.connect(self.on_setpoint_changed)
 
         layout = QVBoxLayout()
         layout.addWidget(self.speed_dial)
         layout.addWidget(self.speed_label)
-        layout.addWidget(self.slider_label)
-        layout.addWidget(self.speed_slider)
+        layout.addWidget(self.setpoint_label)
+        layout.addWidget(self.speed_setpoint)
         self.setLayout(layout)
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_speed)
         self.timer.start(1000)
 
-        self.on_slider_changed(0)
+        self.cal_speeds_hz, self.cal_registers = load_motor_calibration(CAL_FILE)
+
+        self.on_setpoint_changed(0)
 
     def read_edge_time_us(self) -> int:
         # Write register address 3, then read 3 bytes.
@@ -111,6 +158,30 @@ class MotorSpeedClient(QWidget):
 
         except OSError as e:
             self.slider_label.setText(f"I2C write error: {e}")
+
+    def on_setpoint_changed(self, speed_hz: float):
+        pwm_value = int(round(np.interp(
+            speed_hz,
+            self.cal_speeds_hz,
+            self.cal_registers
+        )))
+    
+        pwm_value = max(0, min(0xFFFF, pwm_value))
+    
+        low = pwm_value & 0xFF
+        high = (pwm_value >> 8) & 0xFF
+    
+        self.setpoint_label.setText(
+            f"Spindle speed setpoint: {speed_hz:.2f} Hz → register {pwm_value}"
+        )
+    
+        try:
+            self.bus.write_byte_data(I2C_ADDR, REG_PWM_LOW, low)
+            self.bus.write_byte_data(I2C_ADDR, REG_PWM_HIGH, high)
+    
+        except OSError as e:
+            self.setpoint_label.setText(f"I2C write error: {e}")
+
 
     def closeEvent(self, event):
         self.bus.close()
