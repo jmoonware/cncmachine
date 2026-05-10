@@ -4,6 +4,7 @@ import sys
 from smbus2 import SMBus, i2c_msg
 import numpy as np
 import time
+from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
@@ -165,7 +166,10 @@ class MotorSpeedClient(QWidget):
             self.cal_speeds_hz,
             self.cal_registers
         )))
-    
+
+        if speed_hz < 0.1:  # manually set this
+            pwm_value = 0x2300
+  
         pwm_value = max(0, min(0xFFFF, pwm_value))
     
         low = pwm_value & 0xFF

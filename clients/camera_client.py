@@ -239,7 +239,7 @@ class IDSPeakMonoCamera:
                     pass
                 
                 try:
-                    set_float_node(self.nodemap, "AcquisitionFrameRate", 20.0)
+                    set_float_node(self.nodemap, "AcquisitionFrameRate", 5.0)
                 except Exception:
                     pass
 

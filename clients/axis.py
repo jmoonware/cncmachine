@@ -4,7 +4,7 @@ Reusable PyQt6 axis-control widget for a Parker 6K8 controller.
 
 - Shared serial client is thread-safe.
 - Multiple AxisWidget instances can share one Parker6KSerial object.
-- Serial config: 9600 baud, 8N1, no RTS/CTS, no XON/XOFF.
+- Serial config: BAUD baud, 8N1, no RTS/CTS, no XON/XOFF.
 - Commands and responses are logged with rotating debug logs.
 """
 
@@ -36,12 +36,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+BAUD = 38400
 
 # -----------------------------
 # Logging
 # -----------------------------
 
-def configure_logging(log_path: str = "parker6k_axis_widget.log") -> logging.Logger:
+def configure_logging(log_path: str = "paxis.log") -> logging.Logger:
     logger = logging.getLogger("parker6k")
     logger.setLevel(logging.DEBUG)
 
@@ -79,7 +80,7 @@ class Parker6KSerial:
     def __init__(
         self,
         port: str = "/dev/ttyUSB0",
-        baudrate: int = 9600,
+        baudrate: int = BAUD,
         timeout: float = 0.75,
         write_timeout: float = 0.75,
         eol: bytes = b"\r",
@@ -280,7 +281,7 @@ class AxisConfig:
     thread_pitch_microns: int = 10000
 
     font_point_size: int = 24
-    poll_interval_ms: int = 1000
+    poll_interval_ms: int = 200
 
 
 # -----------------------------
@@ -300,7 +301,7 @@ class AxisWidget(QWidget):
 
     TAS_BITS = {
         1: "Moving",
-        2: "NegPos",
+        2: "Dir",
         5: "Homed",
         12: "Stall",
         13: "Shutdown",
@@ -509,8 +510,8 @@ class AxisWidget(QWidget):
         self.send_async(f"{self.axis}AD{self.decel_box.value()}")
 
     def on_absolute_changed(self, checked: bool) -> None:
-        # User requested M1 for absolute, M0 for incremental.
-        self.send_async(f"{self.axis}M{1 if checked else 0}")
+        # User requested MA1 for absolute, MA0 for incremental.
+        self.send_async(f"{self.axis}MA{1 if checked else 0}")
 
     def on_drive_changed(self, checked: bool) -> None:
         self.send_async(f"{self.axis}DRIVE{1 if checked else 0}")
@@ -543,8 +544,8 @@ class AxisWidget(QWidget):
         self.send_async(f"{self.axis}PSET0")
 
     def poll_status(self) -> None:
-        self.send_async(f"{self.axis}TAS", log_poll=False)
-        self.send_async(f"{self.axis}TFB", log_poll=False)
+        self.send_async(f"!{self.axis}TAS", log_poll=False)
+        self.send_async(f"!{self.axis}TFB", log_poll=False)
 
     # -----------------------------
     # Parsing
@@ -614,9 +615,10 @@ def main() -> int:
 
     client = Parker6KSerial(
         port="/dev/ttyUSB0",
-        baudrate=9600,
-        timeout=0.75,
-        write_timeout=0.75,
+        baudrate=BAUD,
+        timeout=0.15,
+        write_timeout=0.15,
+        eol=b"\r",
     )
 
     widget = AxisWidget(
